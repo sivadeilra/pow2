@@ -89,7 +89,7 @@
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
-#![no_std]
+#![cfg_attr(not(test), no_std)]
 
 use core::convert::TryFrom;
 use core::ops::{Div, Mul};
@@ -244,6 +244,11 @@ impl core::fmt::Debug for Pow2 {
     fn fmt(&self, fmt: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(fmt, "2^{}", self.0)
     }
+}
+
+#[test]
+fn test_debug() {
+    assert_eq!(format!("{:?}", Pow2::from_exponent(12)), "2^12");
 }
 
 /// A zero-sized error type for reporting failures to convert to a `Pow2`.
