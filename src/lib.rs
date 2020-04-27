@@ -1,45 +1,90 @@
 //! Represents a non-negative power of 2, by storing its exponent.
-//! 
+//!
 //! The `Pow2` type is limited in range to `1 .. 2^255` (inclusive). It is simply a wrapper around
 //! `u8`, which stores the exponent.
-//! 
-//! `Pow2` is typically used for aligning integer values.
-//! 
+//!
+//! `Pow2` is typically used for aligning integer values, such as I/O buffer sizes, page sizes,
+//! etc.
+//!
 //! Negative powers of 2 are not supported because they have little or no application in managing
 //! memory, quick multiplication, etc.
-//! 
+//!
 //! `Pow2` can represent values outside of the range of specific integer types. For example,
 //! `Pow2::from_exponent(40)` cannot be converted to `u32`. The conversion implementations treat
 //! this in a way similar to arithmetic overflow for operations such as `x * y`; the operation is
 //! defined, but may fail at runtime.
-//! 
+//!
 //! It would be possible to define a family of `Pow2` variants, one for each primitive integer type.
 //! However, the ergonomics of that design might be undesireable; it is left for future study.
-//! 
+//!
 //! The operators defined for `Pow2` are defined in terms of the value of the power of 2, not the
 //! exponent. For example, `Pow2 * Pow2` results in adding the exponents, not in multiplying the
 //! exponents.
-//! 
+//!
 //! # Examples
-//! 
+//!
 //! ```
 //! # use pow2::Pow2;
 //! const PAGE_SIZE: Pow2 = Pow2::from_exponent(12);
-//! let x: u32 = 5000;
+//! assert_eq!(u32::from(PAGE_SIZE), 0x1000);
+//! let x: u32 = 0x1eee;
 //! assert_eq!(PAGE_SIZE.align_down(x), 0x1000);
 //! assert_eq!(PAGE_SIZE.align_up(x), Some(0x2000));
 //! assert_eq!(PAGE_SIZE.align_up_unchecked(x), 0x2000);
 //! ```
-//! 
+//!
 //! The `pow2_const!` macro can be used for writing constant powers of 2, using a value rather than
 //! an exponent. Due to current limitations of const fns, the `pow2_const!` macro does not check
 //! whether the input is a valid power of 2. If it is not a power of 2, then its behavior is
 //! undefined.
-//! 
+//!
 //! ```
 //! use pow2::{Pow2, pow2_const};
 //! const PAGE_SIZE: Pow2 = pow2_const!(0x1000);
 //! assert_eq!(PAGE_SIZE.exponent(), 12);
+//! ```
+//! 
+//! # Signed examples
+//! 
+//! `Pow2` works with signed types as well as unsigned.
+//! 
+//! ```
+//! use pow2::Pow2;
+//! const ALIGN4: Pow2 = Pow2::from_exponent(2);
+//! assert_eq!(ALIGN4.align_up(4i32), Some(4i32));
+//! assert_eq!(ALIGN4.align_up(3i32), Some(4i32));
+//! assert_eq!(ALIGN4.align_up(2i32), Some(4i32));
+//! assert_eq!(ALIGN4.align_up(1i32), Some(4i32));
+//! assert_eq!(ALIGN4.align_up(-0i32), Some(0i32));
+//! assert_eq!(ALIGN4.align_up(-1i32), Some(0i32));
+//! assert_eq!(ALIGN4.align_up(-2i32), Some(0i32));
+//! assert_eq!(ALIGN4.align_up(-3i32), Some(0i32));
+//! assert_eq!(ALIGN4.align_up(-4i32), Some(-4i32));
+//! assert_eq!(ALIGN4.align_up(-5i32), Some(-4i32));
+//! assert_eq!(ALIGN4.align_up(-6i32), Some(-4i32));
+//! assert_eq!(ALIGN4.align_up(-7i32), Some(-4i32));
+//! assert_eq!(ALIGN4.align_up(-8i32), Some(-8i32));
+//! ```
+//! 
+//! # Unsafe code examples
+//! 
+//! This library does not contain unsafe code, but it can be used by unsafe code to operate on
+//! pointers. This is because Rust allows safe code to operate on the values of unsafe pointers,
+//! but not to dereference them.
+//! 
+//! ```
+//! use pow2::{Pow2, pow2_const};
+//! 
+//! const U32_ALIGN: Pow2 = Pow2::align_of::<u32>();
+//! 
+//! let array: [u32; 4] = [ 111, 222, 333, 444 ];
+//! let item_0_address: *const u8 = &array[0] as *const u32 as *const u8;
+//! let item_1_address: *const u8 = &array[1] as *const u32 as *const u8;
+//! 
+//! assert_eq!(
+//!   U32_ALIGN.align_up((item_0_address as usize + 1) as *const u8).unwrap(),
+//!   item_1_address
+//! );
 //! ```
 
 #![forbid(unsafe_code)]
@@ -50,10 +95,10 @@ use core::convert::TryFrom;
 use core::ops::{Div, Mul};
 
 /// Represents a non-negative power of 2, by storing its exponent.
-/// 
+///
 /// This type is limited in range to `2^0 .. 2^255` (inclusive). It is simply a wrapper around a
 /// `u8`, which stores the exponent.
-/// 
+///
 /// See module docs for more info.
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 #[repr(transparent)]
@@ -74,9 +119,20 @@ impl Pow2 {
         self.0
     }
 
+    /// Returns a `Pow2` value for the memory alignment of a given type `T`.
+    ///
+    /// ```
+    /// use pow2::Pow2;
+    /// assert_eq!(Pow2::align_of::<u32>(), Pow2::from_exponent(2));
+    /// assert_eq!(Pow2::align_of::<u64>(), Pow2::from_exponent(3));
+    /// ```
+    pub const fn align_of<T>() -> Pow2 {
+        Pow2(core::mem::align_of::<T>().trailing_zeros() as u8)
+    }
+
     /// Multiplies two `Pow2` values by adding their exponents. If the values are out of range,
     /// returns `None`.
-    /// 
+    ///
     /// ```
     /// use pow2::Pow2;
     /// assert_eq!(Pow2::from_exponent(2).checked_mul(Pow2::from_exponent(3)), Some(Pow2::from_exponent(5)));
@@ -88,7 +144,7 @@ impl Pow2 {
 
     /// Divides a `Pow2` value by another `Pow2`. If the divisor is greater than the quotient,
     /// then returns `None`.
-    /// 
+    ///
     /// ```
     /// use pow2::Pow2;
     /// assert_eq!(Pow2::from_exponent(4).checked_div(Pow2::from_exponent(1)), Some(Pow2::from_exponent(3)));
@@ -100,7 +156,7 @@ impl Pow2 {
 
     /// Multiplies two `Pow2` values by adding their exponents. If the values are out of range,
     /// then normal arithmetic overflow handling occurs.
-    /// 
+    ///
     /// ```
     /// use pow2::Pow2;
     /// assert_eq!(Pow2::from_exponent(4) * Pow2::from_exponent(3), Pow2::from_exponent(7));
@@ -111,7 +167,7 @@ impl Pow2 {
 
     /// Divides a `Pow2` value by another `Pow2`. If the divisor is greater than the quotient,
     /// then normal arithmetic overflow handling occurs.
-    /// 
+    ///
     /// ```
     /// use pow2::Pow2;
     /// assert_eq!(Pow2::from_exponent(12) / Pow2::from_exponent(2), Pow2::from_exponent(10));
@@ -120,11 +176,27 @@ impl Pow2 {
         Pow2(self.0 - other.0)
     }
 
-    /// Aligns `n` to a power of 2, by returning the smallest multiple of `self` that is greater
-    /// than or equal to `n`.
+    /// Returns `true` if `n` is an integer multiple of `self` (is aligned).
     /// 
+    /// ```
+    /// use pow2::Pow2;
+    /// const PAGE_SIZE: Pow2 = Pow2::from_exponent(12);
+    /// assert_eq!(PAGE_SIZE.is_aligned(0u32), true);
+    /// assert_eq!(PAGE_SIZE.is_aligned(1000u32), false);
+    /// assert_eq!(PAGE_SIZE.is_aligned(4095u32), false);
+    /// assert_eq!(PAGE_SIZE.is_aligned(4096u32), true);
+    /// assert_eq!(PAGE_SIZE.is_aligned(4097u32), false);
+    /// assert_eq!(PAGE_SIZE.is_aligned(8192u32), true);
+    /// assert_eq!(PAGE_SIZE.is_aligned(core::u32::MAX), false);
+    /// ```
+    pub fn is_aligned<T: IntPow2>(self, n: T) -> bool {
+        n.is_aligned(self)
+    }
+
+    /// Returns the smallest multiple of `self` (a power of 2) that is greater than or equal to `n`.
+    ///
     /// If the aligned value would overflow the range of `T`, then this function returns `None`.
-    /// 
+    ///
     /// ```
     /// use pow2::Pow2;
     /// const PAGE_SIZE: Pow2 = Pow2::from_exponent(12);
@@ -135,12 +207,11 @@ impl Pow2 {
         n.align_up(self)
     }
 
-    /// Aligns `n` to a power of 2, by returning the smallest multiple of `self` that is greater
-    /// than or equal to `n`.
-    /// 
+    /// Returns the smallest multiple of `self` (a power of 2) that is greater than or equal to `n`.
+    ///
     /// If the aligned value would overflow the range of `T`, then normal arithmetic overflow
     /// handling occurs.
-    /// 
+    ///
     /// ```
     /// use pow2::Pow2;
     /// 
@@ -149,8 +220,7 @@ impl Pow2 {
         n.align_up_unchecked(self)
     }
 
-    /// Aligns `n` to a power of 2, by returning the largest multiple of `self` that is less than
-    /// or equal to `n`.
+    /// Returns the largest multiple of `self` (a power of 2) that is less than or equal to `n`.
     pub fn align_down<T: IntPow2>(self, n: T) -> T {
         n.align_down(self)
     }
@@ -180,6 +250,25 @@ impl core::fmt::Debug for Pow2 {
 #[derive(Clone, Debug)]
 pub struct NotPow2;
 
+/// Integers that can be represented as powers of 2.
+pub trait IntPow2: Sized {
+    /// Produces a value of `Self` from a power of 2.
+    fn from_pow2(p: Pow2) -> Self;
+
+    /// Indicates whether a value of `Self` is a multiple of a given power of 2 (is aligned).
+    fn is_aligned(self, p: Pow2) -> bool;
+
+    /// Returns the greatest multiple of `p` that is less than or equal to `Self`.
+    fn align_down(self, p: Pow2) -> Self;
+
+    /// Returns the smallest multiple of `p` is that is greater than or equal to `Self`.
+    fn align_up_unchecked(self, p: Pow2) -> Self;
+
+    /// Returns the smallest multiple of `p` is that is greater than or equal to `Self`,
+    /// or `None` if the value cannot be represented in the range of `Self`.
+    fn align_up(self, p: Pow2) -> Option<Self>;
+}
+
 macro_rules! define_conversions {
     ($t:ty) => {
         impl TryFrom<$t> for Pow2 {
@@ -203,6 +292,14 @@ macro_rules! define_conversions {
                 1 << p.exponent()
             }
         }
+
+        /*
+        impl Into<$t> for Pow2 {
+            fn into(self) -> $t {
+                1 << p.exponent()
+            }
+        }
+        */
 
         impl IntPow2 for $t {
             fn from_pow2(p: Pow2) -> Self {
@@ -242,33 +339,45 @@ define_conversions!(i64);
 define_conversions!(i128);
 define_conversions!(isize);
 
-/// Integers that can be represented as powers of 2.
-pub trait IntPow2: Sized {
-    /// Produces a value of `Self` from a power of 2.
-    fn from_pow2(p: Pow2) -> Self;
+// We can operate on the values of raw pointers in safe code because we are not dereferencing them.
 
-    /// Indicates whether a value of `Self` is a multiple of a given power of 2 (is aligned).
-    fn is_aligned(self, p: Pow2) -> bool;
+macro_rules! define_pointer_conversions {
+    ($T:ident => $t:ty) => {
+        impl<T> IntPow2 for $t {
+            fn from_pow2(p: Pow2) -> Self {
+                usize::from_pow2(p) as Self
+            }
 
-    /// Returns the greatest multiple of `p` that is less than or equal to `Self`.
-    fn align_down(self, p: Pow2) -> Self;
+            fn is_aligned(self, p: Pow2) -> bool {
+                (self as usize).is_aligned(p)
+            }
 
-    /// Returns the smallest multiple of `p` is that is greater than or equal to `Self`.
-    fn align_up_unchecked(self, p: Pow2) -> Self;
+            fn align_down(self, p: Pow2) -> Self {
+                (self as usize).align_down(p) as Self
+            }
 
-    /// Returns the smallest multiple of `p` is that is greater than or equal to `Self`,
-    /// or `None` if the value cannot be represented in the range of `Self`.
-    fn align_up(self, p: Pow2) -> Option<Self>;
+            fn align_up_unchecked(self, p: Pow2) -> Self {
+                (self as usize).align_up_unchecked(p) as Self
+            }
+
+            fn align_up(self, p: Pow2) -> Option<Self> {
+                Some((self as usize).align_up(p)? as Self)
+            }
+        }
+    };
 }
 
+define_pointer_conversions!(T => *mut T);
+define_pointer_conversions!(T => *const T);
+
 /// A helper macro for defining constant values of `Pow2` using constant inputs.
-/// 
+///
 /// This macro has no way to validate its inputs, unfortunately, due to limitations in const fns
 /// and traits. You must pass it a valid power of 2; if the input is not a power of 2, then the
 /// results are undefined.
-/// 
+///
 /// # Example
-/// 
+///
 /// ```
 /// use pow2::{Pow2, pow2_const};
 /// const PAGE_SIZE: Pow2 = pow2_const!(4096);
@@ -280,3 +389,15 @@ macro_rules! pow2_const {
         $crate::Pow2::from_exponent(($value as u64).trailing_zeros() as u8)
     };
 }
+
+/// The number of bytes in one kebibyte (1,024).
+pub const KIB: Pow2 = Pow2::from_exponent(10);
+
+/// The number of bytes in one mebibyte (1,048,576).
+pub const MIB: Pow2 = Pow2::from_exponent(20);
+
+/// The number of bytes in one gibibyte (1,073,741,824).
+pub const GIB: Pow2 = Pow2::from_exponent(30);
+
+/// The number of bytes in one tebibyte (1,099,511,627,776).
+pub const TIB: Pow2 = Pow2::from_exponent(40);
