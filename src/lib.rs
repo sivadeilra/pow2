@@ -43,11 +43,11 @@
 //! const PAGE_SIZE: Pow2 = pow2_const!(0x1000);
 //! assert_eq!(PAGE_SIZE.exponent(), 12);
 //! ```
-//! 
+//!
 //! # Signed examples
-//! 
+//!
 //! `Pow2` works with signed types as well as unsigned.
-//! 
+//!
 //! ```
 //! use pow2::Pow2;
 //! const ALIGN4: Pow2 = Pow2::from_exponent(2);
@@ -65,22 +65,22 @@
 //! assert_eq!(ALIGN4.align_up(-7i32), Some(-4i32));
 //! assert_eq!(ALIGN4.align_up(-8i32), Some(-8i32));
 //! ```
-//! 
+//!
 //! # Unsafe code examples
-//! 
+//!
 //! This library does not contain unsafe code, but it can be used by unsafe code to operate on
 //! pointers. This is because Rust allows safe code to operate on the values of unsafe pointers,
 //! but not to dereference them.
-//! 
+//!
 //! ```
 //! use pow2::{Pow2, pow2_const};
-//! 
+//!
 //! const U32_ALIGN: Pow2 = Pow2::align_of::<u32>();
-//! 
+//!
 //! let array: [u32; 4] = [ 111, 222, 333, 444 ];
 //! let item_0_address: *const u8 = &array[0] as *const u32 as *const u8;
 //! let item_1_address: *const u8 = &array[1] as *const u32 as *const u8;
-//! 
+//!
 //! assert_eq!(
 //!   U32_ALIGN.align_up((item_0_address as usize + 1) as *const u8).unwrap(),
 //!   item_1_address
@@ -102,7 +102,7 @@ use core::ops::{Div, Mul};
 /// See module docs for more info.
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 #[repr(transparent)]
-#[cfg_attr(feature = "zerocopy", derive(zerocopy::AsBytes, zerocopy::FromBytes))]
+#[cfg_attr(feature = "zerocopy", derive(zerocopy_derive::AsBytes, zerocopy_derive::FromBytes))]
 pub struct Pow2(u8);
 
 impl Pow2 {
@@ -177,7 +177,7 @@ impl Pow2 {
     }
 
     /// Returns `true` if `n` is an integer multiple of `self` (is aligned).
-    /// 
+    ///
     /// ```
     /// use pow2::Pow2;
     /// const PAGE_SIZE: Pow2 = Pow2::from_exponent(12);
@@ -214,7 +214,7 @@ impl Pow2 {
     ///
     /// ```
     /// use pow2::Pow2;
-    /// 
+    ///
     /// ```
     pub fn align_up_unchecked<T: IntPow2>(self, n: T) -> T {
         n.align_up_unchecked(self)
@@ -228,6 +228,8 @@ impl Pow2 {
 
 impl Mul<Pow2> for Pow2 {
     type Output = Pow2;
+
+    #[allow(clippy::suspicious_arithmetic_impl)]
     fn mul(self, other: Pow2) -> Pow2 {
         Pow2(self.0 + other.0)
     }
@@ -235,6 +237,8 @@ impl Mul<Pow2> for Pow2 {
 
 impl Div<Pow2> for Pow2 {
     type Output = Pow2;
+
+    #[allow(clippy::suspicious_arithmetic_impl)]
     fn div(self, other: Pow2) -> Pow2 {
         Pow2(self.0 - other.0)
     }
@@ -255,12 +259,13 @@ fn test_debug() {
 #[derive(Clone, Debug)]
 pub struct NotPow2;
 
-/// Integers that can be represented as powers of 2.
+/// Integers and pointers that can be represented as powers of 2.
 pub trait IntPow2: Sized {
     /// Produces a value of `Self` from a power of 2.
     fn from_pow2(p: Pow2) -> Self;
 
     /// Indicates whether a value of `Self` is a multiple of a given power of 2 (is aligned).
+    #[allow(clippy::wrong_self_convention)]
     fn is_aligned(self, p: Pow2) -> bool;
 
     /// Returns the greatest multiple of `p` that is less than or equal to `Self`.
@@ -272,6 +277,22 @@ pub trait IntPow2: Sized {
     /// Returns the smallest multiple of `p` is that is greater than or equal to `Self`,
     /// or `None` if the value cannot be represented in the range of `Self`.
     fn align_up(self, p: Pow2) -> Option<Self>;
+}
+
+/// Integers that can be represented as powers of 2.
+pub trait IntOnlyPow2: Sized {
+    /// Returns `self` divided by `p`, but rounded up.
+    ///
+    /// In other words, if `self` is not a multiple of `p` then this returns `self / p + 1`.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use pow2::{Pow2, IntOnlyPow2};
+    /// const PAGE_SIZE: Pow2 = Pow2::from_exponent(12);
+    /// assert_eq!(5000u32.div_round_up(PAGE_SIZE), 2);
+    /// ```
+    fn div_round_up(self, p: Pow2) -> Self;
 }
 
 macro_rules! define_conversions {
@@ -325,6 +346,32 @@ macro_rules! define_conversions {
             fn align_up(self, p: Pow2) -> Option<Self> {
                 let low_mask: $t = (1 << p.exponent()) - 1;
                 Some((self.checked_add(low_mask)?) & !low_mask)
+            }
+        }
+
+        impl IntOnlyPow2 for $t {
+            fn div_round_up(self, p: Pow2) -> Self {
+                let low_mask: $t = (1 << p.exponent()) - 1;
+                let partial = (self & low_mask) != 0;
+                (self >> p.exponent()) + (partial as $t)
+            }
+        }
+
+        impl Div<Pow2> for $t {
+            type Output = Self;
+
+            #[allow(clippy::suspicious_arithmetic_impl)]
+            fn div(self, rhs: Pow2) -> Self {
+                self >> rhs.exponent()
+            }
+        }
+
+        impl Mul<Pow2> for $t {
+            type Output = Self;
+
+            #[allow(clippy::suspicious_arithmetic_impl)]
+            fn mul(self, rhs: Pow2) -> Self {
+                self << rhs.exponent()
             }
         }
     };
