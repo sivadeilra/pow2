@@ -8,8 +8,5 @@ description = "Represents a non-negative power of 2, by storing its exponent."
 repository = "https://github.com/sivadeilra/pow2"
 
 [dependencies]
-zerocopy = { version = "0.7.3", optional = true }
-zerocopy-derive = { version = "0.7.3", optional = true }
-
-[features]
-default = []
+zerocopy = "0.7.3"
+zerocopy-derive = "0.7.3"

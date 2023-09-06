@@ -102,7 +102,7 @@ use core::ops::{Div, Mul};
 /// See module docs for more info.
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 #[repr(transparent)]
-#[cfg_attr(feature = "zerocopy", derive(zerocopy::AsBytes, zerocopy::FromBytes))]
+#[cfg_attr(feature = "zerocopy", derive(zerocopy_derive::AsBytes, zerocopy_derive::FromBytes))]
 pub struct Pow2(u8);
 
 impl Pow2 {
