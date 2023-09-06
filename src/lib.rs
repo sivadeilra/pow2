@@ -284,6 +284,14 @@ pub trait IntOnlyPow2: Sized {
     /// Returns `self` divided by `p`, but rounded up.
     ///
     /// In other words, if `self` is not a multiple of `p` then this returns `self / p + 1`.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use pow2::{Pow2, IntOnlyPow2};
+    /// const PAGE_SIZE: Pow2 = Pow2::from_exponent(12);
+    /// assert_eq!(5000u32.div_round_up(PAGE_SIZE), 2);
+    /// ```
     fn div_round_up(self, p: Pow2) -> Self;
 }
 
